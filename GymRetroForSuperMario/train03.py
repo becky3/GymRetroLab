@@ -4,19 +4,48 @@ from stable_baselines3 import PPO
 from gym.wrappers import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from datetime import datetime
+import torch
 import os
+
 
 
 def get_trained_model(
         game_name: str,
-        total_steps: int
+        total_steps: int,
+        learning_rate: float,
+        model_path: str,
+        device: torch.device,
+        policy: str = "MlpPolicy",
+        n_steps: int = 2048,
 ) -> PPO:
     env = retro.make(game=game_name)
     env_train = DummyVecEnv([lambda: env])
 
-    model = PPO("MlpPolicy", env_train, verbose=1)
+    if os.path.isfile(model_path):
+        # Load the existing model
+        model = PPO.load(
+            model_path,
+            policy=policy,
+            env=env_train,
+            verbose=2,
+            learning_rate=learning_rate,
+            device=device,
+            n_steps=n_steps
+        )
+    else:
+        # Create a new model
+        model = PPO(
+            policy=policy,
+            env=env_train,
+            verbose=2,
+            learning_rate=learning_rate,
+            device=device,
+            n_steps=n_steps
+        )
 
     model.learn(total_timesteps=total_steps)
+
+    model.save(model_path)
 
     env.close()
 
@@ -59,14 +88,26 @@ def play_game_and_save_video(
 
 
 def main():
-    game_name = 'SuperMarioBros-Nes'
-    total_steps = 10
 
-    model = get_trained_model(game_name, total_steps)
+    game_name = 'SuperMarioBros-Nes'
+    total_steps = 100000
+    model_path = './model.pkl'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"Device: {device}")
+
+    model = get_trained_model(
+        game_name=game_name,
+        total_steps=total_steps,
+        learning_rate=0.005,
+        model_path=model_path,
+        device=device,
+        n_steps=2048*4
+    )
     play_game_and_save_video(
         model,
         game_name,
-        is_save_video=False
+        is_save_video=True
     )
 
 
