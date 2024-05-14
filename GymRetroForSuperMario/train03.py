@@ -1,12 +1,25 @@
 import retro
 import keyboard
+import time
 from stable_baselines3 import PPO
 from gym.wrappers import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.callbacks import BaseCallback
 from datetime import datetime
 import torch
 import os
 
+
+class EpisodeCounterCallback(BaseCallback):
+    def __init__(self):
+        super(EpisodeCounterCallback, self).__init__()
+        self.episode_count = 0
+
+    def _on_step(self) -> bool:
+        if 'done' in self.locals and self.locals['done']:
+            self.episode_count += 1
+            print(f"Episode: {self.episode_count}")
+        return True
 
 
 def get_trained_model(
@@ -15,6 +28,7 @@ def get_trained_model(
         learning_rate: float,
         model_path: str,
         device: torch.device,
+        skip_learning: bool = False,
         policy: str = "MlpPolicy",
         n_steps: int = 2048,
 ) -> PPO:
@@ -43,7 +57,21 @@ def get_trained_model(
             n_steps=n_steps
         )
 
-    model.learn(total_timesteps=total_steps)
+    if not skip_learning:
+        episode_counter_callback = EpisodeCounterCallback()
+
+        print("Start learning...")
+
+        start_time = time.time()  # 学習開始時間を記録
+
+        model.learn(
+            total_timesteps=total_steps,
+            callback=episode_counter_callback)
+
+        print("Learning finished.")
+
+        elapsed_time = time.time() - start_time
+        print(f"Learning time: {round(elapsed_time)} seconds")
 
     model.save(model_path)
 
@@ -90,7 +118,8 @@ def play_game_and_save_video(
 def main():
 
     game_name = 'SuperMarioBros-Nes'
-    total_steps = 100000
+    episode = 1000
+    total_steps = int(100000 / 100 * episode)
     model_path = './model.pkl'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,8 +128,9 @@ def main():
     model = get_trained_model(
         game_name=game_name,
         total_steps=total_steps,
-        learning_rate=0.005,
+        learning_rate=0.0025,
         model_path=model_path,
+        skip_learning=True,
         device=device,
         n_steps=2048*4
     )
