@@ -22,18 +22,35 @@ class EpisodeCounterCallback(BaseCallback):
         return True
 
 
+def linear_schedule(initial_value):
+    def func(progress_remaining):
+        return initial_value * progress_remaining
+    return func
+
+
+def less_schedule(initial_value):
+    def func(progress_remaining):
+        return initial_value / progress_remaining
+    return func
+
 def get_trained_model(
         game_name: str,
         total_steps: int,
-        learning_rate: float,
+        clip_rage_base: float,
+        learning_rate_base: float,
+        ent_coef: float,
         model_path: str,
         device: torch.device,
+        tensorboard_log: str,
         skip_learning: bool = False,
         policy: str = "MlpPolicy",
         n_steps: int = 2048,
 ) -> PPO:
     env = retro.make(game=game_name)
     env_train = DummyVecEnv([lambda: env])
+
+    clip_range_value = linear_schedule(clip_rage_base)
+    learning_rate_value = linear_schedule(learning_rate_base)
 
     if os.path.isfile(model_path):
         # Load the existing model
@@ -42,9 +59,12 @@ def get_trained_model(
             policy=policy,
             env=env_train,
             verbose=2,
-            learning_rate=learning_rate,
+            learning_rate=learning_rate_value,
+            ent_coef=ent_coef,
+            clip_range=clip_range_value,
             device=device,
-            n_steps=n_steps
+            n_steps=n_steps,
+            tensorboard_log=tensorboard_log
         )
     else:
         # Create a new model
@@ -52,9 +72,12 @@ def get_trained_model(
             policy=policy,
             env=env_train,
             verbose=2,
-            learning_rate=learning_rate,
+            learning_rate=learning_rate_value,
+            ent_coef=ent_coef,
+            clip_range=clip_range_value,
             device=device,
-            n_steps=n_steps
+            n_steps=n_steps,
+            tensorboard_log=tensorboard_log
         )
 
     if not skip_learning:
@@ -118,21 +141,25 @@ def play_game_and_save_video(
 def main():
 
     game_name = 'SuperMarioBros-Nes'
-    episode = 1000
+    episode = 100
     total_steps = int(100000 / 100 * episode)
-    model_path = './model.pkl'
+    model_path = './model/model02.pkl'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Device: {device}")
 
     model = get_trained_model(
+        skip_learning=False,
         game_name=game_name,
         total_steps=total_steps,
-        learning_rate=0.0025,
+        clip_rage_base=0.3,
+        learning_rate_base=0.0005,
+        ent_coef=1.0,
         model_path=model_path,
-        skip_learning=True,
         device=device,
-        n_steps=2048*4
+        policy="MlpPolicy",
+        n_steps=2048*2,
+        tensorboard_log="./ppo_tensorboard/"
     )
     play_game_and_save_video(
         model,
