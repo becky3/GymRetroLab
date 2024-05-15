@@ -14,11 +14,18 @@ class EpisodeCounterCallback(BaseCallback):
     def __init__(self):
         super(EpisodeCounterCallback, self).__init__()
         self.episode_count = 0
+        self.interrupted = False
 
     def _on_step(self) -> bool:
         if 'done' in self.locals and self.locals['done']:
             self.episode_count += 1
             print(f"Episode: {self.episode_count}")
+
+        if keyboard.is_pressed('ctrl+c'):
+            print("Stopping training because 'Ctrl+C' key was pressed.")
+            self.interrupted = True
+            return False  # Return False to stop training
+
         return True
 
 
@@ -27,11 +34,6 @@ def linear_schedule(initial_value):
         return initial_value * progress_remaining
     return func
 
-
-def less_schedule(initial_value):
-    def func(progress_remaining):
-        return initial_value / progress_remaining
-    return func
 
 def get_trained_model(
         game_name: str,
@@ -45,7 +47,7 @@ def get_trained_model(
         skip_learning: bool = False,
         policy: str = "MlpPolicy",
         n_steps: int = 2048,
-) -> PPO:
+) -> (bool, PPO):
     env = retro.make(game=game_name)
     env_train = DummyVecEnv([lambda: env])
 
@@ -58,7 +60,7 @@ def get_trained_model(
             model_path,
             policy=policy,
             env=env_train,
-            verbose=2,
+            verbose=1,
             learning_rate=learning_rate_value,
             ent_coef=ent_coef,
             clip_range=clip_range_value,
@@ -71,7 +73,7 @@ def get_trained_model(
         model = PPO(
             policy=policy,
             env=env_train,
-            verbose=2,
+            verbose=1,
             learning_rate=learning_rate_value,
             ent_coef=ent_coef,
             clip_range=clip_range_value,
@@ -80,9 +82,9 @@ def get_trained_model(
             tensorboard_log=tensorboard_log
         )
 
-    if not skip_learning:
-        episode_counter_callback = EpisodeCounterCallback()
+    episode_counter_callback = EpisodeCounterCallback()
 
+    if not skip_learning:
         print("Start learning...")
 
         start_time = time.time()  # 学習開始時間を記録
@@ -100,7 +102,8 @@ def get_trained_model(
 
     env.close()
 
-    return model
+    return (not episode_counter_callback.interrupted,
+            model)
 
 
 def get_monitoring_env(
@@ -127,7 +130,7 @@ def play_game_and_save_video(
     done = False
 
     while not done:
-        if keyboard.is_pressed('q'):
+        if keyboard.is_pressed('ctrl+c'):
             break
 
         action, _states = model.predict(obs)
@@ -140,31 +143,41 @@ def play_game_and_save_video(
 
 def main():
 
+    is_skip_learning = True
+
     game_name = 'SuperMarioBros-Nes'
-    episode = 100
-    total_steps = int(100000 / 100 * episode)
     model_path = './model/model02.pkl'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     print(f"Device: {device}")
 
-    model = get_trained_model(
-        skip_learning=False,
-        game_name=game_name,
-        total_steps=total_steps,
-        clip_rage_base=0.3,
-        learning_rate_base=0.0005,
-        ent_coef=1.0,
-        model_path=model_path,
-        device=device,
-        policy="MlpPolicy",
-        n_steps=2048*2,
-        tensorboard_log="./ppo_tensorboard/"
-    )
+    model = None
+
+    for i in range(100):
+        print(f"Loop: {i+1}")
+
+        training_successful, model = get_trained_model(
+            skip_learning=is_skip_learning,
+            game_name=game_name,
+            total_steps=100000,
+            clip_rage_base=0.3,
+            learning_rate_base=0.01,
+            ent_coef=1.0,
+            model_path=model_path,
+            device=device,
+            policy="MlpPolicy",
+            n_steps=2048*6,
+            tensorboard_log="./ppo_tensorboard/"
+        )
+
+        if not training_successful or is_skip_learning:
+            print("Training was stopped.")
+            break
+
     play_game_and_save_video(
-        model,
-        game_name,
-        is_save_video=True
+        is_save_video=True,
+        model=model,
+        game_name=game_name
     )
 
 
