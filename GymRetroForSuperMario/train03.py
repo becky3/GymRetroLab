@@ -203,7 +203,8 @@ def main():
     print(f"Device: {device}")
 
     for i in range(500):
-        print(f"Loop: {i+1}")
+        index = i + 1
+        print(f"Loop: {index}")
 
         training_successful, model = get_trained_model(
             skip_learning=is_skip_learning,
@@ -219,9 +220,9 @@ def main():
             # tensorboard_log="./ppo_tensorboard/",
         )
 
-        if (i + 1) % 50 == 0:
+        if index == 1 or index % 50 == 0:
             play_game_and_save_video(
-                is_save_video=True, model=model, index=i, game_name=game_name
+                is_save_video=True, model=model, index=index, game_name=game_name
             )
 
         if not training_successful or is_skip_learning:
